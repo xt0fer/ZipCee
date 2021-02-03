@@ -37,7 +37,6 @@ expression
  | expression op=(LSHIFT | RSHIFT) expression //bitwise
  | expression op=(LE | GE | LT | GT) expression //relationalExpr
  | expression op=(EQUAL | NOTEQUAL) expression              //equalityExpr
- | expression AND expression                        //andExpr
  | expression OR expression                        //andExpr
  | expression XOR expression                        //andExpr
  | expression ANDAND expression                        //andExpr

@@ -1,3 +1,8 @@
+/*
+    Symbol holds the concept of a symbol found in the code.
+    Either a variable name or a function name.
+    This is the entries in the ZipCee symbol table during compilation.
+ */
 public class Symbol {
     // String ctx, String name, char type, int addr
     private String type;
@@ -11,10 +16,13 @@ public class Symbol {
 // name: symbol name
 // type: symbol type
 //       L - local symbol
+    public static String LocalSymbol = "L";
 //       F - function
+    public static String FunctionSymbol = "F";
 //       G - global
+    public static String GlobalSymbol = "G";
 //       U - undefined
-// addr: symbol address
+    public static String UndefSymbol = "U";
 
     public Symbol(String context, String name, String type, int addr) {
         this.type = type;

@@ -4,6 +4,18 @@ import java.io.Reader;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 
+/*
+    The InputFile class is built because Java doesn't do char by char input like C can.
+    InputFile reads in the entire file and buffers it into a String.
+    Real compilers won't do that. This isn't a real compiler, it will never compile
+    really big programs.
+
+    fgetc is modelled after the C function.
+    Zero '\0' indicates end of buffer.
+    I didn't bother to forward the EOF (end of file).
+
+    This class is not parameterized, it only wraps Standard Input (System.in)
+ */
 public class InputFile {
     private String buffer;
     private int bufptr = 0;

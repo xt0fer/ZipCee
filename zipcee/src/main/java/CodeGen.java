@@ -2,6 +2,13 @@ import javax.swing.*;
 import java.util.ArrayList;
 import java.util.HashMap;
 
+/*
+this is the compiler's Code Generation class.
+From various points in the compiler, you can generate some kind of lower level
+machine code.
+This class could be re-written to produce x86 or ZipRISC1 "code" (which is the .zas
+assembly language) Or for any other virtual machine you can dream up.
+ */
 public class CodeGen {
     private ArrayList<String> code; // pased in from the ZipCee
     private HashMap<String, Symbol> sym = new HashMap<>();

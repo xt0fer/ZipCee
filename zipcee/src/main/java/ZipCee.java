@@ -4,12 +4,6 @@ import java.util.Map;
 import java.util.function.IntSupplier;
 
 public class ZipCee {
-//    #include <stdlib.h>
-//#include <stdint.h>
-//#include <stdarg.h>
-//#include <stdio.h>
-//#include <ctype.h>
-//#include <string.h>
 
     public static int MAXTOKSZ = 256;
 
@@ -20,41 +14,53 @@ public class ZipCee {
     }
 
 //
-// SYMBOLS
+// Symbol Table
 //
     private HashMap<String, Symbol> sym = new HashMap<>();
-
+// uses the Symbol class in this package
 
 //
 // LEXER
 //
-    //public FILE *f;            /* input source file */
 
     private InputFile f = new InputFile();
-    // public char tok[MAXTOKSZ]; /* current token */
+    /*
+    The InputFile class is built because Java doesn't do char by char input like C can.
+    InputFile reads in the entire file and buffers it into a String.
+    Real compilers won't do that. This isn't a real compiler, it will never compile
+    really big programs.
+     */
+
+    // TOK is the token char buffer
     private char[] tok = new char[MAXTOKSZ];
     private int tokpos = 0;         /* offset inside the current token */
     private char nextc;          /* next char to be pushed into token */
+
     private int linenum = 1;
     private boolean _debug = false;
-    //public char context[MAXTOKSZ];
+
     private String context = "";
     private boolean genPreamble = false;
     private int numPreambleVars = 0;
     private int numGlobalVars = 0;
     private boolean lastIsReturn = false;
     private boolean flagScanGlobalVars = true;
-    //public struct sym *currFunction = NULL;
-    Symbol currFunction;
 
+    Symbol currFunction;
+/*
+A lot of this code uses the notion of "centralized state"
+Many of the methods are "void" which makes this class hard to unit test.
+ */
     /* read next char */
     void readchr() {
+        // if you run out of space, error it
         if (tokpos == MAXTOKSZ - 1) {
             tok[tokpos] = '\0';
             error("[line %d] Token too long: %s\n", linenum, tok);
         }
         tok[tokpos++] = nextc;
         nextc = f.fgetc();
+        // increment linenum after every newline
         if ('\n'==nextc) {linenum++;}
     }
 
@@ -71,15 +77,16 @@ public class ZipCee {
             while (Character.isLetterOrDigit(nextc) || nextc == '_') {
                 readchr();
             }
-            /* if it's not a literal token */
+            /* check for operators */
             if (tokpos == 0) {
                 while (nextc == '<' || nextc == '=' || nextc == '>' || nextc == '!' || nextc == '&' || nextc == '|') {
                     readchr();
                 }
             }
             /* if it's not special chars that looks like an operator */
+            /* look for other structures */
             if (tokpos == 0) {
-                /* try strings and chars inside quotes */
+                /* try strings and chars inside single or double quotes */
                 if (nextc == '\'' || nextc == '"') {
                     char c = nextc;
                     readchr();
@@ -87,7 +94,7 @@ public class ZipCee {
                         readchr();
                     }
                     readchr();
-                } else if (nextc == '/') { // skip comments
+                } else if (nextc == '/') { /* skip various comments */
                     readchr();
                     if (nextc == '*') {      // support comments of the form '/**/'
                         nextc = f.fgetc();
@@ -114,23 +121,41 @@ public class ZipCee {
                     }
                 } else if (nextc != '\0') { /* EOF */
                     /* otherwise it looks like a single-char symbol, like '+', '-' etc */
+                    /* or a run of alphanumerics */
+                    /* add it to the token buffer and read the next char */
                     readchr();
                 }
             }
             break;
         }
+        // at the end of a token, append a Zero char
+        // this makes the tok char[] "null terminated" like a C string
         tok[tokpos] = '\0';
         if (_debug)  {
             System.err.printf("TOKEN: %s\n",fromToken(tok));
         }
     }
 
-    /* check if the current token machtes the string */
+    /*
+    fromToken converts the char[] tok to a String.
+    this is why the tok array needs to be "null terminated"
+     */
+    public String fromToken(char [] token) {
+        StringBuilder sb = new StringBuilder();
+        int idx = 0;
+        while (token[idx] != '\0') {
+            sb.append(token[idx]);
+            idx += 1;
+        }
+        return sb.toString();
+    }
+
+    /* check if the current token matches the string */
     boolean peek(String s) {
         return (fromToken(tok).equals(s));
     }
 
-    /* read the next token if the current token machtes the string */
+    /* read the next token if the current token matches the string */
     boolean accept(String s) {
         if (peek(s)) {
             readtok();
@@ -150,86 +175,33 @@ public class ZipCee {
         }
     }
 
-//    public struct sym *sym_find(String s) {
-//        int i;
-//        struct sym *symbol = NULL;
-//
-//        for (i = 0; i < sympos; i++) {
-//            if (strcmp(sym[i].name, s) == 0) {
-//                symbol = &sym[i];
-//            }
-//        }
-//        return symbol;
-//    }
-
-    // ctx:  context
-// name: symbol name
-// type: symbol type
-//       L - local symbol
-//       F - function
-//       G - global
-//       U - undefined
-// addr: symbol address
-    // public Symbol sym_declare()
-//    public struct sym *sym_declare(String ctx, String name, char type, int addr) {
-//        char sName[MAXTOKSZ];
-//        int  ii;
-//
-//        strcpy(sName,ctx);
-//        strcat(sName,"_");
-//        strcat(sName,name);
-//
-//        for (ii=0; ii<sympos; ii++) {
-//            if (0==strcmp(sym[ii].name,sName)) {
-//                error("[line %d] variable redefined '%s'\n",linenum,name);
-//            }
-//        }
-//
-//        strncpy(sym[sympos].name, sName, MAXTOKSZ);
-//        sym[sympos].addr = addr;
-//        sym[sympos].type = type;
-//        sympos++;
-//        if (sympos > MAXSYMBOLS) {
-//            error("[line %d] Too many symbols\n",linenum);
-//        }
-//        return &sym[sympos-1];
-//    }
-
     /*
-     * BACKEND
+     * Code Generation BACKEND
      */
-//    public static int MAXCODESZ 4096
-//    public char code[MAXCODESZ];
-    public int codepos = 0;
-
+    // output list of generated code.
     ArrayList<String> code = new ArrayList<>();
-
+    // emit instructions -> append to generated code
     public void emit(String line) {
         code.add(line);
     }
-
-public static int TYPE_NUM = 0;
-public static int TYPE_CHARVAR = 1;
-public static int TYPE_INTVAR = 2;
-
-//            #ifndef GEN
-//#error "A code generator (backend) must be provided (use -DGEN=...)"
-//            #else
-//            #include GEN
-//#endif
-
+    public int codepos = 0;
+    /*
+    this is the code generator - this should be dependency-injected.
+     */
     private CodeGen gen = new CodeGen(this.code, this.sym);
+
+
+    public static int TYPE_NUM = 0;
+    public static int TYPE_CHARVAR = 1;
+    public static int TYPE_INTVAR = 2;
 
     /*
      * PARSER AND COMPILER
      */
 
-    //public int expr();
-
-    // read type name:
-//   int, char and pointers (int* char*) are supported
-//   void is skipped (as if nothing was there)
-//   NOTE: void * is not supported
+    //   int, char and pointers (int* char*) are supported
+    //   void is skipped (as if nothing was there)
+    //   NOTE: void * is not supported
     public boolean typename() {
         if (peek("int") || peek("char") ) {
             readtok();
@@ -242,15 +214,10 @@ public static int TYPE_INTVAR = 2;
         return false;
     }
 
-    public String fromToken(char [] token) {
-        StringBuilder sb = new StringBuilder();
-        int idx = 0;
-        while (token[idx] != '\0') {
-            sb.append(token[idx]);
-            idx += 1;
-        }
-        return sb.toString();
-    }
+    /*
+    turn a String like the Hexadecimal string "0x00FF" into the number 255
+    handles Octal, Binary and Decimal too.
+     */
     public int parse_immediate_value() {
         if ( tok[0] =='0' ) {
             if (tok[1]==0 ) return 0;
@@ -275,6 +242,10 @@ public static int TYPE_INTVAR = 2;
         }
     }
 
+    /*
+    handle a primary expression
+    primaryExpression : NUMBER | IDENT | STRING | PAREN expression THESIS ;
+     */
     public int prim_expr() {
         int type = TYPE_NUM;
         if (Character.isDigit(tok[0])) {
@@ -336,6 +307,9 @@ public static int TYPE_INTVAR = 2;
         return type;
     }
 
+    /*
+    handle a binary expression
+     */
     public int binary(int type, IntSupplier aMethod, String buf) {
         if (type != TYPE_NUM) {
             gen.gen_unref(type);
@@ -351,6 +325,10 @@ public static int TYPE_INTVAR = 2;
         return TYPE_NUM;
     }
 
+    /*
+    Handle a postfix expression
+     : expression op=(INCR|DECR) // ++. --
+     */
     public int postfix_expr() {
         int type = prim_expr();
 
@@ -387,6 +365,10 @@ public static int TYPE_INTVAR = 2;
         return type;
     }
 
+    /*
+    Handle an additive expression
+     | expression op=(PLUS | MINUS) expression
+     */
     public int add_expr() {
         int type = postfix_expr();
         while (peek("+") || peek("-")) {
@@ -398,7 +380,10 @@ public static int TYPE_INTVAR = 2;
         }
         return type;
     }
-
+    /*
+    Handle an shift expression
+    expression op=(LSHIFT | RSHIFT) expression //bitwise
+     */
     public int shift_expr() {
         int type = add_expr();
         while (peek("<<") || peek(">>")) {
@@ -410,7 +395,10 @@ public static int TYPE_INTVAR = 2;
         }
         return type;
     }
-
+    /*
+    Handle an relational expression
+    expression op=(LE | GE | LT | GT) expression //relationalExpr
+     */
     public int rel_expr() {
         int type = shift_expr();
         while (peek("<")) {
@@ -421,6 +409,10 @@ public static int TYPE_INTVAR = 2;
         return type;
     }
 
+    /*
+    Handle an equality expression
+    expression op=(EQUAL | NOTEQUAL) expression              //equalityExpr
+     */
     public int eq_expr() {
         int type = rel_expr();
         while (peek("==") || peek("!=")) {
@@ -432,7 +424,10 @@ public static int TYPE_INTVAR = 2;
         }
         return type;
     }
-
+    /*
+    Handle an bitwise expression
+    expression op=(AND | OR | XOR | DIV | MULT | MOD) expression
+     */
     public int bitwise_expr() {
         int type = eq_expr();
 
@@ -454,6 +449,9 @@ public static int TYPE_INTVAR = 2;
         return type;
     }
 
+    /*
+     Handle an normal expression
+     */
     public int expr() {
         int type = bitwise_expr();
         if (type != TYPE_NUM) {
@@ -476,6 +474,9 @@ public static int TYPE_INTVAR = 2;
         return type;
     }
 
+    /*
+    Handle a statement
+     */
     public void statement() {
         lastIsReturn = false;
         if (accept("{")) {
@@ -495,7 +496,7 @@ public static int TYPE_INTVAR = 2;
             //struct sym *var = sym_declare(context,tok, 'L', gen.stackPeek());
             Symbol var = new Symbol(context, fromToken(tok), "L", gen.stackPeek());
             sym.put(var.getSymbol(), var);
-            System.err.printf("GENERATE_VAR %s_%s\n",context, fromToken(tok));
+            if (_debug)System.err.printf("GENERATE_VAR %s_%s\n",context, fromToken(tok));
             readtok();
             if (accept("=")) {
                 System.err.printf("HERE 2=\n");
@@ -510,10 +511,13 @@ public static int TYPE_INTVAR = 2;
         // if we arrive here, we can generate the preamble
         if (genPreamble) {
             genPreamble = false;
-            System.err.printf("Generate Preamble (nvars = %d)\n",numPreambleVars);
+            if (_debug) System.err.printf("Generate Preamble (nvars = %d)\n",numPreambleVars);
             gen.gen_preamble(numPreambleVars);
         }
 
+        /*
+        IF statement
+         */
         if (accept("if")) {
             expect(Here.at(),"(");
             expr();
@@ -533,6 +537,9 @@ public static int TYPE_INTVAR = 2;
             gen.gen_patch(code.get(p2), codepos);
             return;
         }
+        /*
+        WHILE statement
+         */
         if (accept("while")) {
             expect(Here.at(),"(");
             int p1 = codepos;
@@ -547,6 +554,9 @@ public static int TYPE_INTVAR = 2;
             gen.gen_patch(code.get(p2), codepos);
             return;
         }
+        /*
+        RETURN statement
+         */
         if (accept("return")) {
             if (peek(";") == false) {
                 expr();
@@ -557,11 +567,14 @@ public static int TYPE_INTVAR = 2;
             gen.gen_ret(numPreambleVars);
             return;
         }
-        // we should process an expression...
+        // THEN we should process an expression...
         expr();
         expect(Here.at(),";");
     }
 
+    /*
+    Process tokens found in input stream one at a time.
+     */
     public void compile() {
         while (tok[0] != 0) { // until EOF
             if (typename() == false) {
@@ -593,7 +606,7 @@ public static int TYPE_INTVAR = 2;
                 if (typename() == false) {
                     break;
                 }
-                System.out.printf("GEN_PARM_VAR %s_%s\n",var.getName(),fromToken(tok));
+                if (_debug) System.err.printf("GEN_PARM_VAR %s_%s\n",var.getName(),fromToken(tok));
                 //sym_declare(var->name,tok, 'L', -argc-1);
                 Symbol varL = new Symbol(var.getName(), fromToken(tok), "L", argc);
                 sym.put(varL.getSymbol(), var);
@@ -615,8 +628,7 @@ public static int TYPE_INTVAR = 2;
                 var.setType("F");
                 var.setnParams(argc);
                 gen.gen_sym(var);
-                System.out.printf("FUNCTION: %s with %d params\n",var.getName(), argc);
-                //strcpy(context,var->name);
+                if (_debug) System.err.printf("FUNCTION: %s with %d params\n",var.getName(), argc);
                 context = var.getName();
                 genPreamble = true;
                 numPreambleVars = 0;
@@ -629,32 +641,22 @@ public static int TYPE_INTVAR = 2;
         }
     }
 
-    public void print() {
-
-    }
     public int runCompiler(String[] argv) {
-        int ii;
 
         context = "";
 
-//        if (argv.length >1) {
-//            _debug = true;
-//        } else {
-//            _debug = false;
-//        }
-
-        //f = stdin;
         f.readFile();
 
         // prefetch first char and first token
         nextc = f.fgetc();
+        // check to see it was an empty line
         if ('\n'==nextc) {linenum++;}
+        // prefetch the first token
         readtok();
+        // start the compilation process
         compile();
-        //_load_immediate(0xffaaba94); System.out.printf("\n");
-        //_load_immediate(0x000aba94); System.out.printf("\n");
-        //_load_immediate(0xcd0);      System.out.printf("\n");
 
+        // once completed, print out symbol table
         if (_debug) {
             System.err.printf("\n");
             System.err.printf("****************\n");
@@ -667,8 +669,9 @@ public static int TYPE_INTVAR = 2;
             }
             System.err.printf("\n");
         }
+        // once completed, print out the output held in the code list.
         System.out.printf("**********\n");
-        System.out.printf("* Output *\n");
+        System.out.printf("* Assembly Language Output *\n");
         System.out.printf("**********\n");
         System.out.printf("\n");
         gen.gen_finish();
